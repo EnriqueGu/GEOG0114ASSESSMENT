@@ -1,0 +1,220 @@
+---
+title: "GEOG0114 Code"
+output: html_document
+date: "2022-12-20"
+---
+```{r}
+#library a bunch of packages we may (or may not) use
+library(tidyverse)
+library(tmap)
+library(geojsonio)
+library(plotly)
+library(rgdal)
+library(broom)
+library(mapview)
+library(crosstalk)
+library(sf)
+library(sp)
+library(spdep)
+library(fs)
+library(janitor)
+library(stringr)
+library(dplyr)
+library(spatstat)
+library(ggplot2)
+library(OpenStreetMap)
+library(gstat)
+library(geoR)
+library(rJava)
+library(raster)
+library(dismo)
+```
+
+```{r}
+
+
+#import our map
+Newyork <- st_read(here::here("Community Districts", "geo_export_71f28f7b-65ba-4303-b8e5-a6c546e774ee.shp"))%>%st_transform(., 32118)
+
+#plot the map
+plot(Newyork)
+
+Newyork %>% 
+  st_geometry() %>%
+  plot()
+
+#transfer the map
+BoroughMap <- Newyork %>%
+  dplyr::filter(str_detect(boro_cd, "^"))%>%
+  st_transform(., 32118)
+qtm(BoroughMap)
+```
+
+```{r}
+#Load the shooting data and plot the map
+Shooting <- read_csv("NYPD_Shooting_Incident_Data__Historic_.csv")
+coordinates(Shooting) = ~Longitude+Latitude
+crs(Shooting) <- "+proj=longlat +datum=WGS84 +no_defs"
+tm_shape(BoroughMap) + tm_polygons() + tm_shape(Shooting) + tm_dots(col = "blue")
+
+```
+```{r}
+
+#Read the csv file again to get the data of the shooting
+Shooting <- read_csv("NYPD_Shooting_Incident_Data__Historic_.csv")%>%
+  replace_na(list(LONGITUDE=-73, LATITUDE=40.7))%>%
+  st_as_sf(., coords = c("Longitude", "Latitude"), 
+           crs = 4326) %>%
+  st_transform(., 32118)
+
+#separate the shooting case into three group: "Black","White","Asian"
+Shooting_Black<-Shooting %>%
+  dplyr::filter(str_detect(Shooting$`VIC_RACE`, "BLACK"))%>%
+  st_transform(., 32118)
+
+Shooting_Asian<-Shooting %>%
+  dplyr::filter(str_detect(Shooting$`VIC_RACE`, "ASIAN / PACIFIC ISLANDER"))%>%
+  st_transform(., 32118)
+
+Shooting_White<-Shooting %>%
+  dplyr::filter(str_detect(Shooting$`VIC_RACE`, "WHITE"))%>%
+  st_transform(., 32118)
+
+#plot the shooting in the city
+tmap_mode("plot")
+tm_shape(BoroughMap) +
+  tm_polygons(col = NA, alpha = 0.5) +
+  tm_shape(Shooting_Black) +
+  tm_dots(col = "black")+
+  tm_shape(Shooting_Asian) +
+  tm_dots(col = "yellow")+
+  tm_shape(Shooting_White) +
+  tm_dots(col = "red")
+```
+
+```{r}
+#Define a new function to joint the map and the data
+Joinfun <- function(data1, data2){
+  
+  output<- data1%>%
+    st_join(data2,.) %>%
+    add_count(boro_cd, name="shooting_in_borough") 
+  
+  return(output)
+}
+
+#join the shooting and boroughmap together
+Shooting_joint <- Joinfun(Shooting, BoroughMap)
+
+#show the map of boro_cd
+tmap_mode("plot")
+qtm(Shooting_joint, 
+    fill = "boro_cd")
+```
+
+
+```{r}
+#join the shooting and boroughmap together
+Shooting_joint <- Joinfun(Shooting, BoroughMap)
+
+#count the shooting 
+Shooting_joint <- Shooting_joint %>%
+  group_by(., boro_cd,BORO,add=TRUE)%>%
+  summarise(`Shooting Count Overall` = unique(shooting_in_borough))
+
+#plot the map of shooting
+tmap_mode("plot")
+# plot the map
+tm_shape(Shooting_joint) + 
+  tm_polygons("Shooting Count Overall", 
+              palette="PuBu")+
+  tm_legend(show=TRUE)+
+  tm_layout(frame=TRUE)
+```
+
+```{r}
+#join the shooting of Black and boroughmap together then count
+Shooting_joint_Black <- Joinfun(Shooting_Black, BoroughMap)
+Shooting_joint_Black <- Shooting_joint_Black %>%
+  group_by(., boro_cd,BORO,add=TRUE)%>%
+  summarise(`Shooting Count of Black` = unique(shooting_in_borough))
+
+#plot the map of shooting of black
+tmap_mode("plot")
+# plot
+tm_shape(Shooting_joint_Black) + 
+  tm_polygons("Shooting Count of Black", 
+              palette="PuBu")+
+  tm_legend(show=TRUE)+
+  tm_layout(frame=TRUE)
+```
+```{r}
+#join the shooting of Asian and boroughmap together then count
+Shooting_joint_Asian <- Joinfun(Shooting_Asian, BoroughMap)
+Shooting_joint_Asian <- Shooting_joint_Asian %>%
+  group_by(., boro_cd,BORO,add=TRUE)%>%
+  summarise(`Shooting Count of Asian` = unique(shooting_in_borough))
+
+#plot the map of shooting of asian
+tmap_mode("plot")
+# plot
+tm_shape(Shooting_joint_Asian) + 
+  tm_polygons("Shooting Count of Asian", 
+              palette="PuBu")+
+  tm_legend(show=TRUE)+
+  tm_layout(frame=TRUE)+
+  tm_credits("(a)", position=c(1,0.85), size=1.5)
+```
+
+```{r}
+#join the shooting of White and boroughmap together then count
+Shooting_joint_White <- Joinfun(Shooting_White, BoroughMap)
+Shooting_joint_White <- Shooting_joint_White %>%
+  group_by(., boro_cd,BORO,add=TRUE)%>%
+  summarise(`Shooting Count of White` = unique(shooting_in_borough))
+
+#plot the map of shooting of white
+tmap_mode("plot")
+# plot
+tm_shape(Shooting_joint_White) + 
+  tm_polygons("Shooting Count of White", 
+              palette="PuBu")+
+  tm_legend(show=TRUE)+
+  tm_layout(frame=TRUE)+
+  tm_credits("(a)", position=c(1,0.85), size=1.5)
+```
+
+```{r}
+#creat shootingsub which shows the boundary of the map
+ShootingSub <- Shooting[BoroughMap,]
+#check to see that they've been removed
+tmap_mode("plot")
+tm_shape(BoroughMap) +
+  tm_polygons(col = NA, alpha = 0.5) +
+  tm_shape(ShootingSub) +
+  tm_dots(col = "blue")
+
+#now set a window as the borough boundary
+window <- as.owin(BoroughMap)
+
+#create a sp object
+ShootingSub<- ShootingSub %>%
+  as(., 'Spatial')
+#create a ppp object
+ShootingSub.ppp <- ppp(x=ShootingSub@coords[,1],
+                      y=ShootingSub@coords[,2],
+                      window=window)
+
+ShootingSub.ppp %>%
+  density(., sigma=500) %>%
+  plot()
+
+ShootingSub.ppp %>%
+  density(., sigma=1000) %>%
+  plot()
+```
+
+
+
+
+
